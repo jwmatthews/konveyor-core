@@ -39,6 +39,9 @@ async-stream = { version = "0.3", optional = true }
 # Logging
 tracing = "0.1"
 
+[dev-dependencies]
+serde_yaml = "0.9"
+
 [build-dependencies]
 tonic-build = { version = "0.13", optional = true }
 dlprotoc = { version = "0.4", optional = true }

@@ -69,6 +69,10 @@ pub enum KonveyorCondition {
         #[serde(rename = "frontend.cssvar")]
         cssvar: FrontendPatternFields,
     },
+    FrontendDependency {
+        #[serde(rename = "frontend.dependency")]
+        dependency: FrontendDependencyFields,
+    },
     Or {
         or: Vec<KonveyorCondition>,
     },
@@ -88,6 +92,26 @@ pub enum KonveyorCondition {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct FrontendPatternFields {
     pub pattern: String,
+}
+
+/// Fields for a `frontend.dependency` condition.
+///
+/// Matches dependencies in package.json by name and optional version bounds.
+/// The provider checks `dependencies`, `devDependencies`, and `peerDependencies`.
+#[derive(Debug, Serialize, Deserialize)]
+pub struct FrontendDependencyFields {
+    /// Exact dependency name (e.g., `@patternfly/react-core`).
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub name: Option<String>,
+    /// Regex pattern for dependency name.
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub nameregex: Option<String>,
+    /// Match dependencies with version <= this bound.
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub upperbound: Option<String>,
+    /// Match dependencies with version >= this bound.
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub lowerbound: Option<String>,
 }
 
 /// Fields for a `builtin.filecontent` condition.
@@ -169,4 +193,83 @@ pub fn dedup_conditions(conditions: Vec<KonveyorCondition>) -> Vec<KonveyorCondi
         }
     }
     unique
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_frontend_dependency_serializes_to_yaml() {
+        let condition = KonveyorCondition::FrontendDependency {
+            dependency: FrontendDependencyFields {
+                name: Some("@patternfly/react-core".into()),
+                nameregex: None,
+                upperbound: Some("5.99.99".into()),
+                lowerbound: None,
+            },
+        };
+        let yaml = serde_yaml::to_string(&condition).unwrap();
+        assert!(
+            yaml.contains("frontend.dependency"),
+            "Should serialize with frontend.dependency key"
+        );
+        assert!(yaml.contains("@patternfly/react-core"));
+        assert!(yaml.contains("5.99.99"));
+        // Optional None fields should not appear
+        assert!(!yaml.contains("nameregex"));
+        assert!(!yaml.contains("lowerbound"));
+    }
+
+    #[test]
+    fn test_frontend_dependency_roundtrips() {
+        let condition = KonveyorCondition::FrontendDependency {
+            dependency: FrontendDependencyFields {
+                name: Some("@patternfly/react-core".into()),
+                nameregex: None,
+                upperbound: Some("5.99.99".into()),
+                lowerbound: Some("4.0.0".into()),
+            },
+        };
+        let yaml = serde_yaml::to_string(&condition).unwrap();
+        let deserialized: KonveyorCondition = serde_yaml::from_str(&yaml).unwrap();
+        match deserialized {
+            KonveyorCondition::FrontendDependency { dependency } => {
+                assert_eq!(dependency.name, Some("@patternfly/react-core".into()));
+                assert_eq!(dependency.upperbound, Some("5.99.99".into()));
+                assert_eq!(dependency.lowerbound, Some("4.0.0".into()));
+                assert_eq!(dependency.nameregex, None);
+            }
+            _ => panic!("Should deserialize as FrontendDependency"),
+        }
+    }
+
+    #[test]
+    fn test_frontend_dependency_in_rule_yaml() {
+        let rule = KonveyorRule {
+            rule_id: "test-dep-rule".into(),
+            labels: vec!["source=test".into()],
+            effort: 1,
+            category: "mandatory".into(),
+            description: "Update dep".into(),
+            message: "Update this dependency".into(),
+            links: vec![],
+            when: KonveyorCondition::FrontendDependency {
+                dependency: FrontendDependencyFields {
+                    name: Some("@patternfly/react-core".into()),
+                    nameregex: None,
+                    upperbound: Some("5.99.99".into()),
+                    lowerbound: None,
+                },
+            },
+            fix_strategy: None,
+        };
+        let yaml = serde_yaml::to_string(&rule).unwrap();
+        assert!(yaml.contains("frontend.dependency:"));
+        assert!(
+            yaml.contains("name: '@patternfly/react-core'")
+                || yaml.contains("name: \"@patternfly/react-core\"")
+                || yaml.contains("name: '@patternfly/react-core'")
+        );
+    }
 }
