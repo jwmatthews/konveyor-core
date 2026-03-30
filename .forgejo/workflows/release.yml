@@ -18,6 +18,8 @@ jobs:
 
       - name: Install Rust stable
         uses: https://github.com/dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
 
       - name: Cache cargo registry & build
         uses: https://github.com/actions/cache@v5
