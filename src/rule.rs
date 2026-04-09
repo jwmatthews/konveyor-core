@@ -185,6 +185,18 @@ pub struct FrontendReferencedFields {
     /// InputGroup must be InputGroupItem or InputGroupText").
     #[serde(rename = "notChild", skip_serializing_if = "Option::is_none", default)]
     pub not_child: Option<String>,
+    /// Negative-existence child filter: match the component (via `pattern`)
+    /// and emit an incident if NONE of its direct JSX children match this
+    /// regex. Used for conformance rules like "AlertGroup must contain Alert."
+    ///
+    /// Inverse of `child` (which gates on existence). Complementary to
+    /// `notChild` (which fires per non-matching child).
+    #[serde(
+        rename = "requiresChild",
+        skip_serializing_if = "Option::is_none",
+        default
+    )]
+    pub requires_child: Option<String>,
     /// Filter JSX prop values to only those matching this regex.
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub value: Option<String>,
