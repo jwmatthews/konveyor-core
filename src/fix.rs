@@ -75,8 +75,8 @@ pub enum FixStrategyKind {
     FindAlternative,
     /// Update import paths or module system (require <-> import).
     UpdateImport,
-    /// Update package.json dependency configuration.
-    UpdateDependency,
+    /// Ensure package.json has the correct dependency (add if missing, update if present).
+    EnsureDependency,
     /// Requires manual review -- behavioral change or complex refactor.
     ManualReview,
 }
@@ -252,9 +252,16 @@ pub struct FixStrategyEntry {
     /// Props that remain on the root component in the new version.
     #[serde(skip_serializing_if = "Vec::is_empty", default)]
     pub retained_props: Vec<String>,
-    /// Map of removed prop name → child component that now owns it.
+    /// Map of removed prop name → child component that now owns it (as a named prop).
     #[serde(skip_serializing_if = "BTreeMap::is_empty", default)]
     pub prop_to_child: BTreeMap<String, String>,
+    /// Props removed from the root that don't have an exact prop-name match
+    /// on any child component. Maps prop name → description of where/how to
+    /// migrate (e.g., "ModalFooter (as children)"). Unlike `prop_to_child`,
+    /// these props typically become *children* of the target component or
+    /// are removed entirely.
+    #[serde(skip_serializing_if = "BTreeMap::is_empty", default)]
+    pub unmapped_removed_props: BTreeMap<String, String>,
     /// Child component names removed from the family (flattened into parent).
     #[serde(skip_serializing_if = "Vec::is_empty", default)]
     pub removed_children: Vec<String>,
@@ -343,10 +350,10 @@ impl FixStrategyEntry {
         }
     }
 
-    /// Create an UpdateDependency strategy for a package version bump.
-    pub fn update_dependency(package: impl Into<String>, new_version: impl Into<String>) -> Self {
+    /// Create an EnsureDependency strategy: add if missing, update version if present.
+    pub fn ensure_dependency(package: impl Into<String>, new_version: impl Into<String>) -> Self {
         Self {
-            strategy: "UpdateDependency".into(),
+            strategy: "EnsureDependency".into(),
             package: Some(package.into()),
             new_version: Some(new_version.into()),
             ..Default::default()
