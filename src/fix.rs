@@ -6,7 +6,7 @@
 //! round-trip compatibility.
 
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::path::Path;
 
 use anyhow::{Context, Result};
@@ -157,6 +157,51 @@ pub struct MemberMappingEntry {
     pub new_name: String,
 }
 
+/// A single prop's migration mapping between a deprecated and v6 component.
+///
+/// Extends `MemberMappingEntry` with type information from the SD pipeline's
+/// `old_component_prop_types` and `new_component_prop_types`.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct PropMigrationEntry {
+    /// Prop name on the deprecated component.
+    pub old_name: String,
+    /// Prop name on the v6 replacement component.
+    pub new_name: String,
+    /// Full TypeScript type on the deprecated component (if available).
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub old_type: Option<String>,
+    /// Full TypeScript type on the v6 replacement component (if available).
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub new_type: Option<String>,
+    /// Whether the type changed between deprecated and v6.
+    #[serde(default)]
+    pub type_changed: bool,
+}
+
+/// Migration context for a deprecated component → v6 replacement.
+///
+/// Stored on family-level `FixStrategyEntry` entries to provide the LLM with
+/// the complete old→new prop mapping, including type signatures for matching
+/// props that changed type, new-only props with their types, and removed-only
+/// props with no v6 equivalent.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct DeprecatedMigrationContext {
+    /// Package the deprecated component was imported from.
+    pub old_package: String,
+    /// Package the v6 replacement is imported from.
+    pub new_package: String,
+    /// Props that exist on both old and new, with name mappings and types.
+    #[serde(skip_serializing_if = "Vec::is_empty", default)]
+    pub matching_props: Vec<PropMigrationEntry>,
+    /// Props that exist ONLY on the v6 component (not on deprecated).
+    /// Map of prop_name → TypeScript type string.
+    #[serde(skip_serializing_if = "BTreeMap::is_empty", default)]
+    pub new_props: BTreeMap<String, String>,
+    /// Props that exist ONLY on the deprecated component (no v6 equivalent).
+    #[serde(skip_serializing_if = "Vec::is_empty", default)]
+    pub removed_props: Vec<String>,
+}
+
 /// A machine-readable fix strategy entry.
 ///
 /// For non-consolidated rules, `from`/`to` hold the single mapping.
@@ -196,6 +241,47 @@ pub struct FixStrategyEntry {
     /// Dependency update: new version range (e.g., "^6.1.0").
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub new_version: Option<String>,
+
+    // ── Family migration fields ────────────────────────────────────────
+    // Used by `FamilyMigration` strategy entries (keyed `family:<Name>`)
+    // to describe the complete target component structure for a family.
+    /// Target JSX structure template showing correct composition.
+    /// Example: `<Modal ...>\n  <ModalHeader .../>\n  <ModalBody>...</ModalBody>\n</Modal>`
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub target_structure: Option<String>,
+    /// Props that remain on the root component in the new version.
+    #[serde(skip_serializing_if = "Vec::is_empty", default)]
+    pub retained_props: Vec<String>,
+    /// Map of removed prop name → child component that now owns it.
+    #[serde(skip_serializing_if = "BTreeMap::is_empty", default)]
+    pub prop_to_child: BTreeMap<String, String>,
+    /// Child component names removed from the family (flattened into parent).
+    #[serde(skip_serializing_if = "Vec::is_empty", default)]
+    pub removed_children: Vec<String>,
+    /// Map of "Child.prop" → "Parent.prop" for child-to-prop migrations.
+    #[serde(skip_serializing_if = "BTreeMap::is_empty", default)]
+    pub child_props_to_parent: BTreeMap<String, String>,
+    /// Prop value changes: prop_name → list of old→new value mappings.
+    #[serde(skip_serializing_if = "BTreeMap::is_empty", default)]
+    pub prop_value_changes: BTreeMap<String, Vec<MappingEntry>>,
+    /// New imports needed after restructuring (child components to add).
+    #[serde(skip_serializing_if = "Vec::is_empty", default)]
+    pub new_imports: Vec<String>,
+    /// Imports to remove after restructuring (removed child components).
+    #[serde(skip_serializing_if = "Vec::is_empty", default)]
+    pub removed_imports: Vec<String>,
+    /// Import source package (e.g., "@patternfly/react-core").
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub import_source: Option<String>,
+
+    // ── Deprecated migration context ──────────────────────────────────
+    // Populated for families where a deprecated component has a v6 replacement.
+    // Provides the complete old→new prop mapping with type signatures.
+    /// Deprecated → v6 migration context with prop mappings, types, and
+    /// new/removed prop lists. Present when the family includes a deprecated
+    /// component that has a detected migration target.
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub deprecated_migration: Option<DeprecatedMigrationContext>,
 }
 
 impl FixStrategyEntry {
