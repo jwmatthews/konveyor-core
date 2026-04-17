@@ -289,6 +289,15 @@ pub struct FixStrategyEntry {
     /// component that has a detected migration target.
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub deprecated_migration: Option<DeprecatedMigrationContext>,
+
+    /// Patterns to exclude from this fix strategy's automated replacement.
+    ///
+    /// Used with `CssVariablePrefix` to prevent blind prefix swaps on
+    /// CSS classes that were removed in the target version. When the
+    /// matched text contains any of these patterns, the edit is skipped.
+    /// The incident is still reported (as Manual) by a separate dead-class rule.
+    #[serde(skip_serializing_if = "Vec::is_empty", default)]
+    pub exclude_patterns: Vec<String>,
 }
 
 impl FixStrategyEntry {
